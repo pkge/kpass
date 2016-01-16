@@ -134,7 +134,7 @@ clip() {
 	local sleep_argv0="password store sleep on display $DISPLAY"
 	pkill -f "^$sleep_argv0" 2>/dev/null && sleep 0.5
 	local before="$(xclip -o -selection "$X_SELECTION" 2>/dev/null | base64)"
-	echo -n "$1" | xclip -selection "$X_SELECTION" || die "Error: Could not copy data to the clipboard"
+	echo -n "$1" | head -n1 | xclip -selection "$X_SELECTION" || die "Error: Could not copy data to the clipboard"
 	(
 		( exec -a "$sleep_argv0" sleep "$CLIP_TIME" )
 		local now="$(xclip -o -selection "$X_SELECTION" | base64)"
@@ -228,10 +228,10 @@ cmd_usage() {
 	        If put on the clipboard, it will be cleared in $CLIP_TIME seconds.
 	    $PROGRAM grep search-string
 	        Search for password files containing search-string when decrypted.
-	    $PROGRAM insert [--echo,-e | --multiline,-m] [--force,-f] pass-name
+	    $PROGRAM insert [--echo,-e | --multiline,-m | --input=file,-i file] [--force,-f] pass-name
 	        Insert new password. Optionally, echo the password back to the console
-	        during entry. Or, optionally, the entry may be multiline. Prompt before
-	        overwriting existing password unless forced.
+	        during entry. Or, optionally, the entry may be multiline. Or, optionally insert
+          from a file. Prompt before overwriting existing password unless forced.
 	    $PROGRAM edit pass-name
 	        Insert a new password or edit an existing password using ${EDITOR:-vi}.
 	    $PROGRAM generate [--no-symbols,-n] [--clip,-c] [--in-place,-i | --force,-f] pass-name pass-length
@@ -309,13 +309,17 @@ cmd_show() {
 	local passfile="$PREFIX/$path.gpg"
 	check_sneaky_paths "$path"
 	if [[ -f $passfile ]]; then
+		local passfull="$($GPG -d "${GPG_OPTS[@]}" "$passfile")"
+		local meta="$(echo "$passfull" | tail -n-1)"
+		local pass="$(echo "$passfull" | head -n 1)"
+		[[ -n $pass ]] || exit 1
 		if [[ $clip -eq 0 ]]; then
-			$GPG -d "${GPG_OPTS[@]}" "$passfile" || exit $?
+			echo $pass
 		else
-			local pass="$($GPG -d "${GPG_OPTS[@]}" "$passfile" | head -n 1)"
-			[[ -n $pass ]] || exit 1
+			#local pass="$($GPG -d "${GPG_OPTS[@]}" "$passfile" | head -n 1)"
 			clip "$pass" "$path"
 		fi
+		echo "$meta" | jq .
 	elif [[ -d $PREFIX/$path ]]; then
 		if [[ -z $path ]]; then
 			echo "Password Store"
@@ -354,23 +358,24 @@ cmd_grep() {
 }
 
 cmd_insert() {
-	local opts multiline=0 noecho=1 force=0
-	opts="$($GETOPT -o mef -l multiline,echo,force -n "$PROGRAM" -- "$@")"
+	local opts multiline=0 input=0 noecho=1 force=0
+	opts="$($GETOPT -o mi:ef -l multiline,input:,echo,force -n "$PROGRAM" -- "$@")"
 	local err=$?
 	eval set -- "$opts"
 	while true; do case $1 in
 		-m|--multiline) multiline=1; shift ;;
+		-i|--input) input=1; inputfile="$2"; shift; shift ;;
 		-e|--echo) noecho=0; shift ;;
 		-f|--force) force=1; shift ;;
 		--) shift; break ;;
 	esac done
 
-	[[ $err -ne 0 || ( $multiline -eq 1 && $noecho -eq 0 ) || $# -ne 1 ]] && die "Usage: $PROGRAM $COMMAND [--echo,-e | --multiline,-m] [--force,-f] pass-name"
+	[[ $err -ne 0 || ( $multiline -eq 1 && $noecho -eq 0 ) || $# -ne 1 ]] && die "Usage: $PROGRAM $COMMAND [--echo,-e | --multiline,-m | --input=file,-i file] [--force,-f] pass-name"
 	local path="$1"
 	local passfile="$PREFIX/$path.gpg"
 	check_sneaky_paths "$path"
 
-	[[ $force -eq 0 && -e $passfile ]] && yesno "An entry already exists for $path. Overwrite it?"
+	[[ $force -eq 0 && -e $passfile ]] && yesno "Entry already exists for $path. Overwrite it?"
 
 	mkdir -p -v "$PREFIX/$(dirname "$path")"
 	set_gpg_recipients "$(dirname "$path")"
@@ -379,6 +384,14 @@ cmd_insert() {
 		echo "Enter contents of $path and press Ctrl+D when finished:"
 		echo
 		$GPG -e "${GPG_RECIPIENT_ARGS[@]}" -o "$passfile" "${GPG_OPTS[@]}" || exit 1
+  elif [[ $input -eq 1 ]]; then
+    if [[ -e $inputfile ]]; then
+      echo "Inserting file $inputfile"
+      cat $inputfile
+      cat $inputfile | $GPG -e "${GPG_RECIPIENT_ARGS[@]}" -o "$passfile" "${GPG_OPTS[@]}" || exit 1
+    else
+      echo "Error: file not found: $inputfile"
+    fi
 	elif [[ $noecho -eq 1 ]]; then
 		local password password_again
 		while true; do
@@ -429,8 +442,8 @@ cmd_edit() {
 }
 
 cmd_generate() {
-	local opts clip=0 force=0 symbols="-y" inplace=0
-	opts="$($GETOPT -o ncif -l no-symbols,clip,in-place,force -n "$PROGRAM" -- "$@")"
+	local opts clip=0 force=0 symbols="-y" inplace=0 guide=0
+	opts="$($GETOPT -o ncifg -l no-symbols,clip,in-place,force,guide -n "$PROGRAM" -- "$@")"
 	local err=$?
 	eval set -- "$opts"
 	while true; do case $1 in
@@ -438,10 +451,11 @@ cmd_generate() {
 		-c|--clip) clip=1; shift ;;
 		-f|--force) force=1; shift ;;
 		-i|--in-place) inplace=1; shift ;;
+		-g|--guide) guide=1; shift ;;
 		--) shift; break ;;
 	esac done
 
-	[[ $err -ne 0 || $# -ne 2 || ( $force -eq 1 && $inplace -eq 1 ) ]] && die "Usage: $PROGRAM $COMMAND [--no-symbols,-n] [--clip,-c] [--in-place,-i | --force,-f] pass-name pass-length"
+	[[ $err -ne 0 || $# -ne 2 || ( $force -eq 1 && $inplace -eq 1 ) ]] && die "Usage: $PROGRAM $COMMAND [--no-symbols,-n] [--clip,-c] [--in-place,-i | --force,-f] [--guide,-g] pass-name pass-length"
 	local path="$1"
 	local length="$2"
 	check_sneaky_paths "$path"
@@ -454,6 +468,21 @@ cmd_generate() {
 
 	local pass="$(pwgen -s $symbols $length 1)"
 	[[ -n $pass ]] || exit 1
+
+  local pass_only=$pass
+
+  local details=""
+	if [[ $guide -eq 1 ]]; then
+		local details_temp="${passfile}.tmp.${RANDOM}.${RANDOM}.${RANDOM}.${RANDOM}.--"
+		cmd_collect_details $details_temp
+		details=`cat $details_temp`
+
+    # The newline here is important
+		pass="$pass_only
+$details"
+		rm $details_temp
+	fi
+
 	if [[ $inplace -eq 0 ]]; then
 		$GPG -e "${GPG_RECIPIENT_ARGS[@]}" -o "$passfile" "${GPG_OPTS[@]}" <<<"$pass"
 	else
@@ -470,10 +499,33 @@ cmd_generate() {
 	git_add_file "$passfile" "$verb generated password for ${path}."
 
 	if [[ $clip -eq 0 ]]; then
-		printf "\e[1m\e[37mThe generated password for \e[4m%s\e[24m is:\e[0m\n\e[1m\e[93m%s\e[0m\n" "$path" "$pass"
+		printf "\n\e[1m\e[36mGenerated password for \e[4m%s\e[24m:\e[0m \e[1m\e[93m%s\e[0m\n" "$path" "$pass_only"
 	else
-		clip "$pass" "$path"
+		clip "$pass_only" "$path"
+		printf "\n\e[1m\e[36mNew entry for \e[4m%s\e[24m:\n" "$path"
 	fi
+  echo $details | jq .
+}
+
+cmd_collect_details() {
+	[[ $# -ne 1 ]] && die "Usage: $PROGRAM $COMMAND file"
+	file=$1
+	default_user_path="$PREFIX/.default-user"
+	if [[ -e $default_user_path ]]; then
+		default_username=`head $default_user_path`
+		read -p "Username ($default_username): " name
+		name=${name:-$default_username}
+	else
+		read -p "Username: " name
+	fi
+
+	clipped_url=`pbpaste | grep http | head -n1`
+	read -p "Url ($clipped_url): " url
+	url=${url:-$clipped_url}
+
+	updated=`date`
+
+	echo '{"user":"'$name'", "url":"'$url'", "updated":"'$updated'"}' >> $file
 }
 
 cmd_delete() {
