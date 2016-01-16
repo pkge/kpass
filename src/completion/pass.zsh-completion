@@ -45,6 +45,8 @@ _pass () {
 					"--clip[copy password to the clipboard]" \
 					"-f[force overwrite]" \
 					"--force[force overwrite]" \
+					"-g[guide field entry]" \
+					"--guide[guide field entry]" \
 					"-i[replace first line]" \
 					"--in-place[replace first line]"
 				_pass_complete_entries_with_subdirs
