@@ -310,13 +310,12 @@ cmd_show() {
 	check_sneaky_paths "$path"
 	if [[ -f $passfile ]]; then
 		local passfull="$($GPG -d "${GPG_OPTS[@]}" "$passfile")"
-		local meta="$(echo "$passfull" | tail -n-1)"
+		local meta="$(echo "$passfull" | tail -n+2)"
 		local pass="$(echo "$passfull" | head -n 1)"
 		[[ -n $pass ]] || exit 1
 		if [[ $clip -eq 0 ]]; then
 			echo $pass
 		else
-			#local pass="$($GPG -d "${GPG_OPTS[@]}" "$passfile" | head -n 1)"
 			clip "$pass" "$path"
 		fi
 		echo "$meta" | jq .
