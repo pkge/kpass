@@ -8,3 +8,9 @@ A fork of https://www.passwordstore.org/ with two additions:
 
 I find this provides a nicer experience for my pass usage patterns.
 
+# Install
+
+```
+brew tap pkge/tap
+brew install pkge/tap/pass
+```
