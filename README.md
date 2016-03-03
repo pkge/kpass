@@ -14,3 +14,10 @@ I find this provides a nicer experience for my pass usage patterns.
 brew tap pkge/tap
 brew install pkge/tap/pass
 ```
+
+# Future additions
+
+It would be nice to be able to easily add fields.
+Something like:
+
+    pass update --add user=MYNAME pass-name
