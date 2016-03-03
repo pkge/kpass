@@ -237,11 +237,12 @@ cmd_usage() {
           from a file. Prompt before overwriting existing password unless forced.
 	    $PROGRAM edit pass-name
 	        Insert a new password or edit an existing password using ${EDITOR:-vi}.
-	    $PROGRAM generate [--no-symbols,-n] [--clip,-c] [--in-place,-i | --force,-f] pass-name pass-length
+	    $PROGRAM generate [--no-symbols,-n] [--clip,-c] [--in-place,-i | --force,-f] [--guide,-g] pass-name pass-length
 	        Generate a new password of pass-length with optionally no symbols.
 	        Optionally put it on the clipboard and clear board after $CLIP_TIME seconds.
-	        Prompt before overwriting existing password unless forced.
 	        Optionally replace only the first line of an existing file with a new password.
+	        Prompt before overwriting existing password unless forced.
+	        Prompt for username and url which will be stored as json.
 	    $PROGRAM rm [--recursive,-r] [--force,-f] pass-name
 	        Remove existing password or directory, optionally forcefully.
 	    $PROGRAM mv [--force,-f] old-path new-path
